@@ -60,9 +60,17 @@ func TestReplayTruncatedFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.aof")
 
-	// Write some content, then truncate it mid-line
-	f, _ := os.Create(path)
-	f.WriteString("SET key1 val1\nSET key2 val2\n")
+	w, err := NewAOFWriter(path)
+	if err != nil {
+		t.Fatalf("NewAOFWriter: %v", err)
+	}
+	w.Write("SET key1 val1")
+	w.Write("SET key2 val2")
+	w.Close()
+
+	// Append corrupt/truncated data
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	f.WriteString("deadbeef:SET trun") // bad CRC and truncated
 	f.Close()
 
 	cmds, err := ReplayAOF(path)

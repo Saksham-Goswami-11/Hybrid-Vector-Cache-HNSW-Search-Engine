@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sakshamgoswami/synapse-cache/pkg/client"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/pkg/client"
 )
 
 func main() {

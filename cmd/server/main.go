@@ -10,10 +10,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/sakshamgoswami/synapse-cache/internal/persist"
-	"github.com/sakshamgoswami/synapse-cache/internal/protocol"
-	"github.com/sakshamgoswami/synapse-cache/internal/server"
-	"github.com/sakshamgoswami/synapse-cache/internal/store"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/persist"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/protocol"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/server"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/store"
 )
 
 func main() {
@@ -38,7 +38,7 @@ func main() {
 	}
 
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	log.Println("initializing synapse-cache...")
+	log.Println("initializing nearby...")
 
 	s := store.New()
 	addr := fmt.Sprintf(":%d", *port)

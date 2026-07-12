@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/sakshamgoswami/synapse-cache/internal/store"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/store"
 )
 
 func makeEntry(id string, dim int) *store.VectorEntry {

@@ -16,11 +16,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sakshamgoswami/synapse-cache/internal/hnsw"
-	"github.com/sakshamgoswami/synapse-cache/internal/persist"
-	"github.com/sakshamgoswami/synapse-cache/internal/protocol"
-	"github.com/sakshamgoswami/synapse-cache/internal/similarity"
-	"github.com/sakshamgoswami/synapse-cache/internal/store"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/hnsw"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/persist"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/protocol"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/similarity"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/store"
 )
 
 // Client represents an active client connection.
@@ -100,7 +100,7 @@ func (srv *Server) ListenAndServe() error {
 	srv.listener = ln
 	srv.mu.Unlock()
 	close(srv.ready) // signal that the listener is bound
-	log.Printf("synapse-cache listening on %s", ln.Addr())
+	log.Printf("nearby listening on %s", ln.Addr())
 
 	// Start background expiry sweep
 	srv.wg.Add(1)
@@ -137,7 +137,7 @@ func (srv *Server) Shutdown() {
 		srv.listener.Close()
 	}
 	srv.wg.Wait()
-	log.Println("synapse-cache shut down gracefully")
+	log.Println("nearby shut down gracefully")
 }
 
 // Addr returns the listener's address (useful for tests with port 0).

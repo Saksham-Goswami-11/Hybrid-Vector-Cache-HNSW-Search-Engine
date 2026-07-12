@@ -9,7 +9,7 @@ This guide will show you how to use the raw Python driver (`SynapseClient`) to b
 First, ensure the Synapse Cache Go server is running (either via Docker or natively):
 ```bash
 # Easiest method:
-docker compose up -d synapse-cache
+docker compose up -d nearby
 ```
 
 In your custom Python project, you will need two files from this repository:

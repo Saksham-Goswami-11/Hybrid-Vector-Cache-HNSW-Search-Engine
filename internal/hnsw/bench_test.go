@@ -5,9 +5,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/sakshamgoswami/synapse-cache/internal/hnsw"
-	"github.com/sakshamgoswami/synapse-cache/internal/similarity"
-	"github.com/sakshamgoswami/synapse-cache/internal/store"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/hnsw"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/similarity"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/store"
 )
 
 func randomVector(rng *rand.Rand, dim int) []float32 {

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sakshamgoswami/synapse-cache/internal/store"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/store"
 )
 
 // startTestServer starts a server on a random port and returns its address.

@@ -12,7 +12,7 @@
 |**Last Updated** | June 2025|
 |**Classification** | Open Source Portfolio Project|
 
-[github.com/your-handle/synapse-cache](https://github.com/your-handle/synapse-cache)
+[github.com/your-handle/nearby](https://github.com/your-handle/nearby)
 
 # 1. Executive Summary
 
@@ -104,7 +104,7 @@ Three layers of concurrency are used, each with a clear scope:
 ## 4.4  Directory Structure
 
 ```
-synapse-cache/
+nearby/
 ├── cmd/
 │   └── server/
 │       └── main.go              # Entry point
@@ -368,7 +368,7 @@ Triggers an async snapshot to synapse.aof on disk.
 
 ## 8.2  Phase 1 — TCP Server Skeleton (Week 1–2)
 
-1. Scaffold Go module: go mod init github.com/your-handle/synapse-cache
+1. Scaffold Go module: go mod init github.com/your-handle/nearby
 2. Implement cmd/server/main.go with --port and --aof flags
 3. Implement internal/server/server.go: net.Listen, Accept loop, per-connection goroutine
 4. Implement internal/protocol/parser.go: tokenize by space, handle \r\n, return Command{Name, Args}
@@ -471,7 +471,7 @@ The demo should ship with a pre-embedded JSON file (chunks + embeddings) so the 
 ## 10.1  Connection
 
 ```text
-import "github.com/your-handle/synapse-cache/pkg/client"
+import "github.com/your-handle/nearby/pkg/client"
  
 c, err := client.New(client.Options{
     Addr:        "localhost:6379",

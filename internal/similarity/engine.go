@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/sakshamgoswami/synapse-cache/internal/store"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/store"
 )
 
 // SimilarityResult holds a single similarity search result.

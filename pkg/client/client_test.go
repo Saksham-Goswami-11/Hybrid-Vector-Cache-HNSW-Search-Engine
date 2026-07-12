@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sakshamgoswami/synapse-cache/internal/server"
-	"github.com/sakshamgoswami/synapse-cache/internal/store"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/server"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/store"
 )
 
 func startServer(t *testing.T) (string, func()) {

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sakshamgoswami/synapse-cache/internal/server"
-	"github.com/sakshamgoswami/synapse-cache/internal/store"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/server"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/store"
 )
 
 func startAuthServer(t *testing.T, password string) (string, func()) {

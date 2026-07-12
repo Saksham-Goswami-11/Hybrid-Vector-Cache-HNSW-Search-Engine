@@ -6,9 +6,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/sakshamgoswami/synapse-cache/internal/server"
-	"github.com/sakshamgoswami/synapse-cache/internal/store"
-	"github.com/sakshamgoswami/synapse-cache/pkg/client"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/server"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/internal/store"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/pkg/client"
 )
 
 func startServer(b *testing.B) (string, func()) {

@@ -5,7 +5,7 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
-    image: synapse-cache:latest
+    image: nearby:latest
     container_name: synapse-db
     restart: unless-stopped
     ports:

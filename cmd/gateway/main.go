@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sakshamgoswami/synapse-cache/pkg/client"
+	"github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/pkg/client"
 )
 
 // SearchRequest represents the JSON payload from the frontend

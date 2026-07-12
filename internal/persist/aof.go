@@ -3,6 +3,7 @@ package persist
 import (
 	"bufio"
 	"fmt"
+	"hash/crc32"
 	"log"
 	"os"
 	"strings"
@@ -24,11 +25,12 @@ func NewAOFWriter(path string) (*AOFWriter, error) {
 	return &AOFWriter{file: f}, nil
 }
 
-// Write appends a command line to the AOF.
+// Write appends a command line to the AOF with a CRC32 checksum prefix.
 func (w *AOFWriter) Write(cmdLine string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	_, err := fmt.Fprintln(w.file, cmdLine)
+	checksum := crc32.ChecksumIEEE([]byte(cmdLine))
+	_, err := fmt.Fprintf(w.file, "%08x:%s\n", checksum, cmdLine)
 	return err
 }
 
@@ -46,7 +48,7 @@ func (w *AOFWriter) Close() error {
 	return w.file.Close()
 }
 
-// ReplayAOF reads commands from an AOF file line by line.
+// ReplayAOF reads commands from an AOF file line by line, verifying CRC32 checksums.
 // It returns the raw command lines. Invalid/empty lines are skipped with a warning.
 func ReplayAOF(path string) ([]string, error) {
 	f, err := os.Open(path)
@@ -68,7 +70,28 @@ func ReplayAOF(path string) ([]string, error) {
 		if line == "" {
 			continue
 		}
-		commands = append(commands, line)
+
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			log.Printf("aof: warning: invalid format at line %d (skipping)", lineNo)
+			continue
+		}
+
+		var expectedCRC uint32
+		_, err := fmt.Sscanf(parts[0], "%08x", &expectedCRC)
+		if err != nil {
+			log.Printf("aof: warning: invalid checksum format at line %d (skipping)", lineNo)
+			continue
+		}
+
+		cmd := parts[1]
+		actualCRC := crc32.ChecksumIEEE([]byte(cmd))
+		if actualCRC != expectedCRC {
+			log.Printf("aof: warning: checksum mismatch at line %d (skipping)", lineNo)
+			continue
+		}
+
+		commands = append(commands, cmd)
 	}
 
 	if err := scanner.Err(); err != nil {
