@@ -815,8 +815,21 @@ func (srv *Server) LoadSnapshots(dir string) error {
 	return nil
 }
 
-// --- Multi-Agent Architecture Command Handlers ---
+// --- Multi-Agent / AutoGen Architecture Command Handlers ---
+//
+// The following handlers (VMSET, VEXPIRE, VNS DROP/LIST) were added to the Nearby
+// wire protocol to support Microsoft AutoGen v0.4 integration. They are invoked by
+// the Python client NearbyVectorStore (nearby_memory.py) via raw TCP socket.
+//
+// Wire protocol reference:
+//   VMSET <ns> <dim> <count> <id1> <f1..fN> [META k v ...] ...   → batch ingest
+//   VEXPIRE <ns> <seconds>                                       → namespace TTL
+//   VNS DROP <ns>                                                 → teardown namespace
+//   VNS LIST                                                      → enumerate namespaces
 
+// handleVMSet processes the VMSET command for batch vector ingestion.
+// AutoGen compatibility: NearbyVectorStore.ingest_batch() sends VMSET with automatic
+// chunking (25 vectors per line) to stay within Nearby's 64KB TCP line length limit.
 func (srv *Server) handleVMSet(cmd protocol.Command) protocol.Response {
 	// VMSET <namespace> <dim> <count> <id1> <f1..fN> [META k v ...] <id2> <f1..fN> [META k v ...] ...
 	if len(cmd.Args) < 4 {
@@ -913,6 +926,9 @@ func (srv *Server) handleVMSet(cmd protocol.Command) protocol.Response {
 	return &protocol.IntegerResponse{Value: stored}
 }
 
+// handleVExpire processes the VEXPIRE command for namespace-level TTL.
+// AutoGen compatibility: called by NearbyVectorStore.set_namespace_ttl() to set
+// a run-level expiration on all vectors in an agent swarm's namespace.
 func (srv *Server) handleVExpire(cmd protocol.Command) protocol.Response {
 	// VEXPIRE <namespace> <seconds>
 	if len(cmd.Args) != 2 {
@@ -932,6 +948,9 @@ func (srv *Server) handleVExpire(cmd protocol.Command) protocol.Response {
 	return &protocol.IntegerResponse{Value: 0}
 }
 
+// handleVNS processes VNS subcommands (DROP, LIST) for namespace lifecycle.
+// AutoGen compatibility: VNS DROP is called by NearbyVectorStore.drop_namespace()
+// at end-of-run to instantly reclaim memory. VNS LIST is used for monitoring.
 func (srv *Server) handleVNS(cmd protocol.Command) protocol.Response {
 	if len(cmd.Args) < 1 {
 		return &protocol.ErrorResponse{Message: "wrong number of arguments for 'VNS' command"}

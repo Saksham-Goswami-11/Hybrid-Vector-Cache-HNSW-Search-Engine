@@ -65,8 +65,8 @@ chunk_text = "The company generated $5M in revenue in Q3."
 
 # 2. Get the embedding from OpenAI
 response = openai.embeddings.create(
-    input=chunk_text,
-    model="text-embedding-3-small"
+ input=chunk_text,
+ model="text-embedding-3-small"
 )
 vector = response.data[0].embedding
 
@@ -75,10 +75,10 @@ db.set(chunk_id, chunk_text)
 
 # 4. Store the VECTOR in vector storage with metadata
 db.vset(
-    namespace="my_rag_app", 
-    key=chunk_id, 
-    vector=vector, 
-    metadata={"source": "finance_report.pdf", "author": "John Doe"}
+ namespace="my_rag_app", 
+ key=chunk_id, 
+ vector=vector, 
+ metadata={"source": "finance_report.pdf", "author": "John Doe"}
 )
 print("Vector stored successfully!")
 ```
@@ -90,30 +90,30 @@ user_query = "How much revenue did we make in Q3?"
 
 # 2. Embed the user's question
 response = openai.embeddings.create(
-    input=user_query,
-    model="text-embedding-3-small"
+ input=user_query,
+ model="text-embedding-3-small"
 )
 query_vector = response.data[0].embedding
 
 # 3. Ask Synapse Cache to find the top 3 most similar vectors
 results = db.vsimilarity(
-    namespace="my_rag_app", 
-    vector=query_vector, 
-    k=3
+ namespace="my_rag_app", 
+ vector=query_vector, 
+ k=3
 )
 
 # 4. Process the results
 for result in results:
-    doc_id = result["id"]
-    similarity_score = result["score"]
-    metadata = result["metadata"]
-    
-    # Retrieve the actual text using the ID
-    raw_text = db.get(doc_id)
-    
-    print(f"Match Score: {similarity_score}")
-    print(f"Source: {metadata.get('source')}")
-    print(f"Content: {raw_text}\n")
+ doc_id = result["id"]
+ similarity_score = result["score"]
+ metadata = result["metadata"]
+ 
+ # Retrieve the actual text using the ID
+ raw_text = db.get(doc_id)
+ 
+ print(f"Match Score: {similarity_score}")
+ print(f"Source: {metadata.get('source')}")
+ print(f"Content: {raw_text}\n")
 ```
 
 ## 5. Architecture Best Practices

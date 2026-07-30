@@ -2,28 +2,42 @@
 bin/
 synapse-server
 synapse-cli
+stress_test
 
 # Database Persistence
 *.aof
-synapse.aof
 *.hnsw.snap
 
 # Python Environments & Caches
-mcp_server/.venv/
 .venv/
 venv/
+mcp_server/.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+*.egg-info/
+dist/
+build/
 
 # Security & Secrets (CRITICAL)
 .env
 *.pem
-cert.pem
-key.pem
+
+# External Dependencies (cloned repos — not part of this project)
+microsoft-autogen/
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 
 # Local Knowledge Base
-# We ignore the contents but keep the folder structure
 knowledge_base/*
 knowledge_base_test/*
 !knowledge_base/.gitkeep
@@ -37,5 +51,3 @@ knowledge_base_test/*
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-

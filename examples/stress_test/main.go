@@ -1,10 +1,16 @@
 // Stress Test Suite for Nearby Ephemeral Vector Memory Grid
 //
+// Validates the same ephemeral vector features (TTL, VMSET, VNS DROP/LIST, VEXPIRE)
+// that are used by the Microsoft AutoGen v0.4 integration (nearby_memory.py) under
+// extreme concurrency conditions.
+//
 // Simulates extreme multi-agent swarm workloads:
-// 1. Concurrency Bomb (500–1000 parallel agent goroutines executing VSET & VMSET)
-// 2. TTL Sweep Stress Test (Vectors with 2-5s TTL expiring under heavy load)
-// 3. Read/Write Collision (Parallel VSIMILARITY queries alongside heavy writes)
-// 4. Resource & Memory Footprint Monitoring (Tracks RAM before, during peak, and post-cleanup)
+//   1. Concurrency Bomb (500–1000 parallel agent goroutines executing VSET & VMSET)
+//   2. TTL Sweep Stress Test (Vectors with 2-5s TTL expiring under heavy load)
+//   3. Read/Write Collision (Parallel VSIMILARITY queries alongside heavy writes)
+//   4. Resource & Memory Footprint Monitoring (Tracks RAM before, during peak, and post-cleanup)
+//
+// See AUTOGEN_NEARBY_INTEGRATION_REPORT.md §4.2 for published stress test results.
 //
 // Usage:
 //   go run cmd/server/main.go -port 6379 &

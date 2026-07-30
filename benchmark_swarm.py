@@ -1,14 +1,29 @@
 """
-Benchmark Swarm Script — AutoGen v0.4 Vector Memory Comparison:
-Run A1: AutoGen + ChromaDB (Single-Insert Loop)
-Run A2: AutoGen + ChromaDB (Batch Insert)
-Run B: AutoGen + NearbyVectorMemory (Single Ingest VSET)
-Run C: AutoGen + NearbyVectorMemory (Batch Ingest VMSET)
+Benchmark Swarm Script — AutoGen v0.4 Vector Memory Backend Comparison
+
+Microsoft AutoGen v0.4 Compatibility:
+  This script benchmarks Nearby (NearbyVectorMemory) as a drop-in replacement for
+  AutoGen's default ChromaDB memory backend. Both backends implement the
+  autogen_core.memory.Memory interface and are tested under identical conditions.
+
+Test Runs:
+  Run A1: AutoGen + ChromaDB (Single-Insert Loop)
+  Run A2: AutoGen + ChromaDB (Batch Insert)
+  Run B:  AutoGen + NearbyVectorMemory (Single Ingest via VSET)
+  Run C:  AutoGen + NearbyVectorMemory (Batch Ingest via VMSET)
 
 Instruments & Reports Percentiles (P50, P90, P99, Max):
-- Document Ingestion Latency (Single vs Batch for both ChromaDB and Nearby)
-- Per-Query Context Retrieval Latency
-- Total Wall-Clock Run Time
+  - Document Ingestion Latency (Single vs Batch for both ChromaDB and Nearby)
+  - Per-Query Context Retrieval Latency
+  - Total Wall-Clock Run Time
+
+Prerequisites:
+  - Nearby server running: go run cmd/server/main.go -port 6379
+  - Python deps: pip install autogen-core autogen-ext chromadb nearby_memory
+
+See Also:
+  - AUTOGEN_NEARBY_INTEGRATION_REPORT.md §4.1 for published results
+  - nearby_memory.py for the NearbyVectorMemory implementation
 """
 
 import asyncio

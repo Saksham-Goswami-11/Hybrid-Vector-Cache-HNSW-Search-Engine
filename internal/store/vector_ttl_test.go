@@ -1,3 +1,10 @@
+// vector_ttl_test.go — Tests for ephemeral vector TTL features.
+//
+// These tests validate the per-vector and per-namespace TTL, batch ingestion (VMSet),
+// namespace lifecycle (VNSDrop, VNSList), lazy expiry, and background sweep functionality
+// that were added for Microsoft AutoGen v0.4 multi-agent swarm compatibility.
+//
+// See AUTOGEN_NEARBY_INTEGRATION_REPORT.md §2.1 for the design rationale.
 package store
 
 import (

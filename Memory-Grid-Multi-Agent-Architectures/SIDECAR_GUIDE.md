@@ -4,18 +4,18 @@
 
 ## Overview
 
-In multi-agent architectures (Researcher → Coder → Reviewer swarms), agents need to pass intermediate embeddings to each other constantly. Nearby serves as a **sidecar** — a colocated, in-memory vector store that eliminates network round-trips and serialization overhead.
+In multi-agent architectures (Researcher → Coder → Reviewer swarms), agents need to pass intermediate embeddings to each other constantly. Nearby serves as a **sidecar** a colocated, in-memory vector store that eliminates network round-trips and serialization overhead.
 
 ```
 ┌─────────────────────────────────────────────┐
-│  Pod / Docker Compose Service               │
-│                                             │
-│  ┌─────────────┐    localhost    ┌────────┐  │
-│  │   Agent      │◄────:6379────►│ Nearby │  │
-│  │  (Researcher │               │Sidecar │  │
-│  │  / Coder /   │               │        │  │
-│  │  Reviewer)   │               │  <15MB │  │
-│  └─────────────┘                └────────┘  │
+│ Pod / Docker Compose Service │
+│ │
+│ ┌─────────────┐ localhost ┌────────┐ │
+│ │ Agent │◄────:6379────►│ Nearby │ │
+│ │ (Researcher │ │Sidecar │ │
+│ │ / Coder / │ │ │ │
+│ │ Reviewer) │ │ <15MB │ │
+│ └─────────────┘ └────────┘ │
 └─────────────────────────────────────────────┘
 ```
 
@@ -58,7 +58,7 @@ The vector expires 300 seconds after being written.
 
 ### Per-Namespace TTL
 
-Set a default TTL for an entire namespace — all existing and future vectors inherit it:
+Set a default TTL for an entire namespace all existing and future vectors inherit it:
 
 ```
 VEXPIRE swarm:run-42 300
@@ -80,9 +80,9 @@ Use a consistent naming convention to scope vector memory to each pipeline run:
 ```
 
 **Examples:**
-- `swarm:run-42` — agent swarm run #42
-- `rerank:req-9182` — reranker request #9182
-- `pipeline:batch-2024-01-15` — daily batch pipeline
+- `swarm:run-42` agent swarm run #42
+- `rerank:req-9182` reranker request #9182
+- `pipeline:batch-2024-01-15` daily batch pipeline
 
 ### Lifecycle
 
@@ -125,8 +125,8 @@ VSIMILARITY swarm:long-run 1536 <query-vec> TOP 10
 ```
 
 **Don't promote when:**
-- Vectors live for seconds (handoff pattern) — index build overhead isn't worth it
-- Namespace has < 1,000 vectors — brute-force is already sub-millisecond
+- Vectors live for seconds (handoff pattern) index build overhead isn't worth it
+- Namespace has < 1,000 vectors brute-force is already sub-millisecond
 
 ---
 
@@ -171,8 +171,8 @@ Returns an array of `[name, vectorCount, approxMemory, ttlRemaining]` for each a
 
 | Workload | Vectors | Dimensions | Approx RAM | Recommended Limit |
 |---|---|---|---|---|
-| Single agent handoff | 100–500 | 768 | ~1.5 MB | 128 MB |
-| Reranker staging | 300–1,000 | 1536 | ~6 MB | 256 MB |
+| Single agent handoff | 100500 | 768 | ~1.5 MB | 128 MB |
+| Reranker staging | 3001,000 | 1536 | ~6 MB | 256 MB |
 | Multi-agent swarm (5 concurrent runs) | 5,000 | 1536 | ~30 MB | 512 MB |
 | Long-running pipeline | 10,000+ | 1536 | ~60 MB+ | 1 GB |
 
@@ -193,7 +193,7 @@ sock.connect(('localhost', 6379))
 
 # Write embedding
 sock.send(b'VSET swarm:run-42 chunk:1 3 0.1 0.2 0.3 META stage researcher EX 300\r\n')
-response = sock.recv(1024)  # +OK\r\n
+response = sock.recv(1024) # +OK\r\n
 
 # Query
 sock.send(b'VSIMILARITY swarm:run-42 3 0.1 0.2 0.3 TOP 5\r\n')

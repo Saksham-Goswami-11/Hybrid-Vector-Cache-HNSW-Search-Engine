@@ -1,15 +1,47 @@
 """
 Nearby Vector Memory Integration for Microsoft AutoGen v0.4+
 
+This module provides a drop-in replacement for AutoGen's default ChromaDB memory
+backend, using Nearby's in-memory vector cache for sub-millisecond latency.
+
 Provides:
-1. NearbyVectorStore: Pure Python socket client (RESP-compatible) for Nearby vector engine.
-2. NearbyVectorMemory: AutoGen Memory component subclass for seamless vector retrieval.
+  1. NearbyVectorStore: Pure Python socket client (RESP-compatible) for the
+     Nearby vector engine. Communicates via TCP using Nearby's text wire protocol.
+  2. NearbyVectorMemory: AutoGen Memory component subclass (autogen_core.memory.Memory)
+     for seamless integration with AssistantAgent and other AutoGen agents.
+
+Architecture:
+  Python Agent (AutoGen) ──TCP──> Nearby Go Server (port 6379)
+  └─ NearbyVectorMemory           └─ internal/server/server.go
+     └─ NearbyVectorStore             └─ handleVSet, handleVMSet, handleVSimilarity, etc.
+
+Wire Protocol Commands Used:
+  - VSET   <ns> <id> <dim> <f1..fN> [META k v ...] [EX <s>]  → single vector ingest
+  - VMSET  <ns> <dim> <count> <id1> <f1..fN> [META k v] ...  → batch ingest
+  - VSIMILARITY <ns> <dim> <f1..fN> TOP <k>                  → top-K cosine search
+  - VEXPIRE <ns> <seconds>                                    → namespace-level TTL
+  - VNS DROP <ns>                                             → teardown namespace
+  - VNS LIST                                                  → enumerate namespaces
+
+Benchmark Results (vs ChromaDB, 100-doc corpus, 128-dim embeddings):
+  - 6.99x faster single ingestion (P50: 0.109ms vs 0.762ms)
+  - 2.22x faster batch ingestion (4.66ms vs 10.34ms)
+  - 1.87x faster context retrieval (P50: 0.132ms vs 0.247ms)
+
+See Also:
+  - AUTOGEN_NEARBY_INTEGRATION_REPORT.md — full technical report
+  - autogen_integration_guide.md — usage guide for AutoGen developers
+  - benchmark_swarm.py — head-to-head benchmark script
+
+Version: 1.1.0
+Compatibility: Microsoft AutoGen v0.4+ (autogen-core, autogen-ext)
 """
 
 from __future__ import annotations
 
 import os
 import socket
+import ssl
 import sys
 import uuid
 import logging
@@ -40,9 +72,14 @@ class NearbyConnectionError(NearbyError):
 class NearbyProtocolError(NearbyError):
     """Raised when protocol parsing or server error response occurs."""
 
+class NearbyAuthError(NearbyError):
+    """Raised when authentication with Nearby server fails."""
+
 def _format_token(val: Any) -> str:
     s = str(val)
-    if " " in s or '"' in s or "\n" in s or "\t" in s:
+    if "\r" in s or "\n" in s:
+        raise ValueError("Metadata keys and values cannot contain newline characters (\\r, \\n).")
+    if " " in s or '"' in s or "\t" in s:
         escaped = s.replace('"', '\\"')
         return f'"{escaped}"'
     return s
@@ -59,24 +96,67 @@ class NearbyVectorStore:
         self,
         host: Optional[str] = None,
         port: Optional[int] = None,
+        password: Optional[str] = None,
+        use_tls: Optional[bool] = None,
+        tls_insecure_skip_verify: Optional[bool] = None,
         timeout_ms: Optional[int] = None,
     ) -> None:
         self.host = host or os.getenv("NEARBY_HOST", "localhost")
         self.port = port or int(os.getenv("NEARBY_PORT", "6379"))
+        self.password = password if password is not None else os.getenv("NEARBY_PASSWORD")
+
+        if use_tls is not None:
+            self.use_tls = use_tls
+        else:
+            self.use_tls = os.getenv("NEARBY_TLS", "").lower() in ("true", "1")
+
+        if tls_insecure_skip_verify is not None:
+            self.tls_insecure_skip_verify = tls_insecure_skip_verify
+        else:
+            self.tls_insecure_skip_verify = os.getenv("NEARBY_TLS_INSECURE_SKIP_VERIFY", "").lower() in ("true", "1")
+
         timeout_ms_val = timeout_ms or int(os.getenv("NEARBY_TIMEOUT_MS", "5000"))
         self.timeout_sec = timeout_ms_val / 1000.0
         self._sock: Optional[socket.socket] = None
 
     def _connect(self) -> socket.socket:
-        """Establish or reuse TCP connection."""
+        """Establish or reuse TCP connection with optional TLS and AUTH handshake."""
         if self._sock is not None:
             return self._sock
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(self.timeout_sec)
+
+            if self.use_tls:
+                context = ssl.create_default_context()
+                if self.tls_insecure_skip_verify:
+                    context.check_hostname = False
+                    context.verify_mode = ssl.CERT_NONE
+                sock = context.wrap_socket(sock, server_hostname=self.host if not self.tls_insecure_skip_verify else None)
+
             sock.connect((self.host, self.port))
+
+            if self.password:
+                # Perform one-time AUTH handshake on connection setup
+                auth_cmd = f"AUTH {_format_token(self.password)}\r\n".encode("utf-8")
+                sock.sendall(auth_cmd)
+                try:
+                    resp = self._read_resp(sock)
+                    if resp != "OK":
+                        sock.close()
+                        raise NearbyAuthError(f"Authentication failed: {resp}")
+                except NearbyProtocolError as pe:
+                    sock.close()
+                    raise NearbyAuthError(f"Authentication failed: {pe}") from pe
+                except Exception as ae:
+                    sock.close()
+                    raise NearbyAuthError(f"Authentication failed during handshake: {ae}") from ae
+
             self._sock = sock
             return sock
+        except NearbyAuthError:
+            self._sock = None
+            raise
         except Exception as e:
             self._sock = None
             raise NearbyConnectionError(f"Failed to connect to Nearby at {self.host}:{self.port}: {e}") from e
@@ -100,6 +180,9 @@ class NearbyVectorStore:
                 sock = self._connect()
                 sock.sendall(data_bytes)
                 return self._read_resp(sock)
+            except NearbyAuthError:
+                self._close()
+                raise
             except (socket.error, NearbyConnectionError) as e:
                 self._close()
                 if attempt == 1:
@@ -308,9 +391,13 @@ class NearbyVectorMemoryConfig(BaseModel):
     """Configuration for Nearby-backed vector memory in AutoGen."""
     host: str = Field(default="localhost", description="Nearby server host")
     port: int = Field(default=6379, description="Nearby server port")
+    password: Optional[str] = Field(default=None, description="Optional authentication password")
+    use_tls: bool = Field(default=False, description="Enable TLS encryption")
+    tls_insecure_skip_verify: bool = Field(default=False, description="Skip TLS certificate verification")
     namespace: str = Field(default="autogen_memory", description="Vector namespace")
     k: int = Field(default=5, description="Number of memories to retrieve")
     ttl_seconds: Optional[int] = Field(default=None, description="Optional TTL in seconds")
+    store_content_preview: bool = Field(default=False, description="Store raw content preview (250 chars) in vector metadata")
     embedding_model: str = Field(
         default="sentence-transformers/all-MiniLM-L6-v2",
         description="Embedding model name (or 'openai/text-embedding-3-small')",
@@ -329,6 +416,9 @@ class NearbyVectorMemory(Memory, Component[NearbyVectorMemoryConfig]):
         self._store = NearbyVectorStore(
             host=self._config.host,
             port=self._config.port,
+            password=self._config.password,
+            use_tls=self._config.use_tls,
+            tls_insecure_skip_verify=self._config.tls_insecure_skip_verify,
         )
         self._embedder = None
         self._dim = 384  # Default for MiniLM-L6-v2
@@ -386,9 +476,10 @@ class NearbyVectorMemory(Memory, Component[NearbyVectorMemoryConfig]):
         vec = embed_fn(text_str)
 
         mem_id = str(uuid.uuid4())[:8]
-        metadata = content.metadata or {}
+        metadata = dict(content.metadata) if content.metadata else {}
         metadata["mime_type"] = str(content.mime_type)
-        metadata["raw_content"] = text_str[:250]  # Store preview in metadata
+        if self._config.store_content_preview:
+            metadata["raw_content"] = text_str[:250]
 
         self._store.ingest(
             namespace=self._config.namespace,
@@ -409,9 +500,10 @@ class NearbyVectorMemory(Memory, Component[NearbyVectorMemoryConfig]):
             text_str = str(c.content)
             vec = embed_fn(text_str)
             mem_id = str(uuid.uuid4())[:8]
-            meta = c.metadata or {}
+            meta = dict(c.metadata) if c.metadata else {}
             meta["mime_type"] = str(c.mime_type)
-            meta["raw_content"] = text_str[:250]
+            if self._config.store_content_preview:
+                meta["raw_content"] = text_str[:250]
             batch_items.append((mem_id, vec, meta))
 
         return self._store.ingest_batch(

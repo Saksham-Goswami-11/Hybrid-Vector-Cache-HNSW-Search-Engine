@@ -1,3 +1,11 @@
+// server_vns_test.go — Integration tests for the AutoGen-compatible wire protocol commands.
+//
+// Tests the VSET EX, VMSET, VEXPIRE, VNS DROP, and VNS LIST commands that were
+// added to the Nearby wire protocol for Microsoft AutoGen v0.4 multi-agent swarm
+// integration. These commands are invoked by the Python client NearbyVectorStore
+// (nearby_memory.py) via raw TCP socket.
+//
+// See AUTOGEN_NEARBY_INTEGRATION_REPORT.md §2.2 for the wire protocol reference.
 package server
 
 import (

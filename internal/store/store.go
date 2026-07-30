@@ -139,7 +139,12 @@ func (s *Store) KVCount() int {
 }
 
 // SweepExpired removes all expired KV keys and expired vector entries.
-// Called by the background expiry goroutine.
+// Called by the background expiry goroutine (every 100ms from server.expirySweep).
+//
+// AutoGen compatibility: this unified sweep was extended to also sweep expired
+// vector entries (via sweepExpiredVectorsLocked) under a single lock acquisition.
+// This is critical for multi-agent workloads where thousands of short-lived
+// embeddings expire concurrently during swarm runs.
 func (s *Store) SweepExpired() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -156,6 +161,10 @@ func (s *Store) SweepExpired() int {
 }
 
 // sweepExpiredVectorsLocked removes expired vectors. Caller must hold s.mu.Lock().
+//
+// AutoGen compatibility: added to support ephemeral vector TTL. When agent swarm
+// runs set namespace-level or per-vector TTLs, this function reclaims memory for
+// all expired vectors and automatically purges empty namespaces.
 func (s *Store) sweepExpiredVectorsLocked() int {
 	count := 0
 	var emptyNamespaces []string

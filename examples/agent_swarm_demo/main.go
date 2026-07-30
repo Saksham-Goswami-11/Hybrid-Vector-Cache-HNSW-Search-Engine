@@ -1,10 +1,13 @@
 // agent_swarm_demo demonstrates Nearby as an ephemeral vector memory grid
-// for multi-agent architectures.
+// for multi-agent architectures, compatible with Microsoft AutoGen v0.4.
 //
 // It simulates a 3-agent pipeline:
-//   1. Researcher agent → writes document embeddings to a shared namespace
-//   2. Coder agent → queries similar vectors to find relevant context
-//   3. Orchestrator → tears down the namespace when the run completes
+//   1. Researcher agent → writes document embeddings to a shared namespace (VSET, VMSET)
+//   2. Coder agent → queries similar vectors to find relevant context (VSIMILARITY)
+//   3. Orchestrator → tears down the namespace when the run completes (VNS DROP)
+//
+// This demo exercises the same wire protocol commands that AutoGen's
+// NearbyVectorMemory (nearby_memory.py) uses, but from Go via pkg/client.
 //
 // Prerequisites:
 //   go run cmd/server/main.go -port 6379
