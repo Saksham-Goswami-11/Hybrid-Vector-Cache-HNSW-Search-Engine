@@ -26,9 +26,8 @@ build/
 # External Dependencies (cloned repos — not part of this project)
 microsoft-autogen/
 
-# Frontend build artifacts
-frontend/node_modules/
-frontend/dist/
+# Frontend directory
+frontend/
 
 # IDE & Editor
 .vscode/
