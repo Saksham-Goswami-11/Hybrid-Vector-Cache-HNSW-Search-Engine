@@ -250,7 +250,7 @@ func (srv *Server) dispatch(client *Client, cmd protocol.Command) protocol.Respo
 
 func isMutative(name string) bool {
 	switch name {
-	case "SET", "DEL", "EXPIRE", "VSET", "VDEL", "VINDEX":
+	case "SET", "DEL", "EXPIRE", "VSET", "VDEL", "VINDEX", "VMSET", "VEXPIRE", "VNS":
 		return true
 	}
 	return false
@@ -311,6 +311,12 @@ func (srv *Server) ExecuteCommand(client *Client, cmd protocol.Command) protocol
 		return srv.handleVSimilarity(cmd)
 	case "VINDEX":
 		return srv.handleVIndex(cmd)
+	case "VMSET":
+		return srv.handleVMSet(cmd)
+	case "VEXPIRE":
+		return srv.handleVExpire(cmd)
+	case "VNS":
+		return srv.handleVNS(cmd)
 	default:
 		return &protocol.ErrorResponse{Message: fmt.Sprintf("unknown command '%s'", cmd.Name)}
 	}
@@ -392,17 +398,32 @@ func (srv *Server) handleTTL(cmd protocol.Command) protocol.Response {
 
 func (srv *Server) handleInfo(_ protocol.Command) protocol.Response {
 	kvCount := srv.store.KVCount()
-	namespacesCount := len(srv.store.VectorNamespaces())
 	totalVectors := srv.store.TotalVectors()
-	info := fmt.Sprintf("# Server\r\nversion:1.0.0\r\n# Keyspace\r\nkv_keys:%d\r\n# Vectors\r\nvector_namespaces:%d\r\ntotal_vectors:%d\r\n",
-		kvCount, namespacesCount, totalVectors)
-	return &protocol.BulkString{Value: info}
+
+	// Get per-namespace info
+	nsInfos := srv.store.VNSList()
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("# Server\r\nversion:1.1.0\r\n# Keyspace\r\nkv_keys:%d\r\n# Vectors\r\nvector_namespaces:%d\r\ntotal_vectors:%d\r\n",
+		kvCount, len(nsInfos), totalVectors))
+
+	// Per-namespace stats
+	if len(nsInfos) > 0 {
+		sb.WriteString("# Vector Namespaces\r\n")
+		for _, ns := range nsInfos {
+			sb.WriteString(fmt.Sprintf("ns:%s:vectors:%d\r\n", ns.Name, ns.VectorCount))
+			sb.WriteString(fmt.Sprintf("ns:%s:approx_memory_bytes:%d\r\n", ns.Name, ns.ApproxMemory))
+			sb.WriteString(fmt.Sprintf("ns:%s:ttl:%d\r\n", ns.Name, ns.TTLRemaining))
+		}
+	}
+
+	return &protocol.BulkString{Value: sb.String()}
 }
 
 // --- Vector Command Handlers ---
 
 func (srv *Server) handleVSet(cmd protocol.Command) protocol.Response {
-	// VSET <namespace> <id> <dim> <f1> <f2> ... <fN> [META <k> <v> ...]
+	// VSET <namespace> <id> <dim> <f1> <f2> ... <fN> [META <k> <v> ...] [EX <seconds>]
 	if len(cmd.Args) < 4 {
 		return &protocol.ErrorResponse{Message: "wrong number of arguments for 'VSET' command"}
 	}
@@ -414,21 +435,28 @@ func (srv *Server) handleVSet(cmd protocol.Command) protocol.Response {
 		return &protocol.ErrorResponse{Message: "invalid dimension"}
 	}
 
-	// Parse floats and find META boundary
+	// Parse floats, find META and EX boundaries
 	metaIdx := -1
+	exIdx := -1
 	for i := 3; i < len(cmd.Args); i++ {
-		if strings.ToUpper(cmd.Args[i]) == "META" {
+		upper := strings.ToUpper(cmd.Args[i])
+		if upper == "META" && metaIdx < 0 {
 			metaIdx = i
-			break
+		} else if upper == "EX" && exIdx < 0 {
+			exIdx = i
 		}
 	}
 
-	var floatArgs []string
-	if metaIdx >= 0 {
-		floatArgs = cmd.Args[3:metaIdx]
-	} else {
-		floatArgs = cmd.Args[3:]
+	// Determine float end boundary
+	floatEnd := len(cmd.Args)
+	if metaIdx >= 0 && metaIdx < floatEnd {
+		floatEnd = metaIdx
 	}
+	if exIdx >= 0 && exIdx < floatEnd {
+		floatEnd = exIdx
+	}
+
+	floatArgs := cmd.Args[3:floatEnd]
 
 	if len(floatArgs) != dim {
 		return &protocol.ErrorResponse{Message: fmt.Sprintf("dimension mismatch: declared %d, got %d floats", dim, len(floatArgs))}
@@ -446,7 +474,12 @@ func (srv *Server) handleVSet(cmd protocol.Command) protocol.Response {
 	// Parse metadata pairs
 	var meta map[string]string
 	if metaIdx >= 0 {
-		metaArgs := cmd.Args[metaIdx+1:]
+		// META args end at EX or end of args
+		metaEnd := len(cmd.Args)
+		if exIdx > metaIdx {
+			metaEnd = exIdx
+		}
+		metaArgs := cmd.Args[metaIdx+1 : metaEnd]
 		if len(metaArgs)%2 != 0 {
 			return &protocol.ErrorResponse{Message: "META requires an even number of arguments (key-value pairs)"}
 		}
@@ -456,7 +489,20 @@ func (srv *Server) handleVSet(cmd protocol.Command) protocol.Response {
 		}
 	}
 
-	if err := srv.store.VSet(namespace, id, dim, vec, meta); err != nil {
+	// Parse optional EX <seconds>
+	var ttl time.Duration
+	if exIdx >= 0 {
+		if exIdx+1 >= len(cmd.Args) {
+			return &protocol.ErrorResponse{Message: "EX requires a value"}
+		}
+		seconds, err := strconv.Atoi(cmd.Args[exIdx+1])
+		if err != nil || seconds <= 0 {
+			return &protocol.ErrorResponse{Message: "invalid expire time in 'VSET' command"}
+		}
+		ttl = time.Duration(seconds) * time.Second
+	}
+
+	if err := srv.store.VSetWithTTL(namespace, id, dim, vec, meta, ttl); err != nil {
 		return &protocol.ErrorResponse{Message: err.Error()}
 	}
 
@@ -769,3 +815,171 @@ func (srv *Server) LoadSnapshots(dir string) error {
 	return nil
 }
 
+// --- Multi-Agent Architecture Command Handlers ---
+
+func (srv *Server) handleVMSet(cmd protocol.Command) protocol.Response {
+	// VMSET <namespace> <dim> <count> <id1> <f1..fN> [META k v ...] <id2> <f1..fN> [META k v ...] ...
+	if len(cmd.Args) < 4 {
+		return &protocol.ErrorResponse{Message: "wrong number of arguments for 'VMSET' command"}
+	}
+
+	namespace := cmd.Args[0]
+	dim, err := strconv.Atoi(cmd.Args[1])
+	if err != nil || dim <= 0 {
+		return &protocol.ErrorResponse{Message: "invalid dimension"}
+	}
+	expectCount, err := strconv.Atoi(cmd.Args[2])
+	if err != nil || expectCount <= 0 {
+		return &protocol.ErrorResponse{Message: "invalid count"}
+	}
+
+	// Parse each entry: id followed by dim floats, optionally followed by META k v pairs
+	entries := make([]store.VMSetEntry, 0, expectCount)
+	i := 3
+	for len(entries) < expectCount && i < len(cmd.Args) {
+		id := cmd.Args[i]
+		i++
+
+		// Read dim floats
+		if i+dim > len(cmd.Args) {
+			return &protocol.ErrorResponse{Message: fmt.Sprintf("entry '%s': not enough floats (need %d)", id, dim)}
+		}
+
+		vec := make([]float32, dim)
+		for j := 0; j < dim; j++ {
+			f, err := strconv.ParseFloat(cmd.Args[i], 32)
+			if err != nil {
+				return &protocol.ErrorResponse{Message: fmt.Sprintf("entry '%s': invalid float at position %d: %s", id, j, cmd.Args[i])}
+			}
+			vec[j] = float32(f)
+			i++
+		}
+
+		// Check for optional META
+		var meta map[string]string
+		if i < len(cmd.Args) && strings.ToUpper(cmd.Args[i]) == "META" {
+			i++ // skip META keyword
+			var metaPairs []string
+			for i+1 < len(cmd.Args) {
+				// If there are more entries remaining, check if the current position
+				// looks like the start of the next entry (an ID followed by dim floats).
+				if len(entries)+1 < expectCount && i+1+dim <= len(cmd.Args) {
+					if _, err := strconv.ParseFloat(cmd.Args[i+1], 64); err == nil {
+						// cmd.Args[i] is the next entry's ID, cmd.Args[i+1] is its first float
+						break
+					}
+				}
+				metaPairs = append(metaPairs, cmd.Args[i], cmd.Args[i+1])
+				i += 2
+			}
+			if len(metaPairs)%2 != 0 {
+				return &protocol.ErrorResponse{Message: fmt.Sprintf("entry '%s': META requires even number of arguments", id)}
+			}
+			if len(metaPairs) > 0 {
+				meta = make(map[string]string, len(metaPairs)/2)
+				for j := 0; j < len(metaPairs); j += 2 {
+					meta[metaPairs[j]] = metaPairs[j+1]
+				}
+			}
+		}
+
+		entries = append(entries, store.VMSetEntry{
+			ID:       id,
+			Vector:   vec,
+			Metadata: meta,
+		})
+	}
+
+	if len(entries) != expectCount {
+		return &protocol.ErrorResponse{Message: fmt.Sprintf("expected %d entries, got %d", expectCount, len(entries))}
+	}
+
+	stored, err := srv.store.VMSet(namespace, dim, entries)
+	if err != nil {
+		return &protocol.ErrorResponse{Message: err.Error()}
+	}
+
+	// Update HNSW index if it exists
+	srv.indexesMu.RLock()
+	idx, hasIndex := srv.indexes[namespace]
+	srv.indexesMu.RUnlock()
+
+	if hasIndex {
+		for _, e := range entries {
+			idx.Insert(e.ID, e.Vector, e.Metadata)
+		}
+	}
+
+	return &protocol.IntegerResponse{Value: stored}
+}
+
+func (srv *Server) handleVExpire(cmd protocol.Command) protocol.Response {
+	// VEXPIRE <namespace> <seconds>
+	if len(cmd.Args) != 2 {
+		return &protocol.ErrorResponse{Message: "wrong number of arguments for 'VEXPIRE' command"}
+	}
+
+	namespace := cmd.Args[0]
+	seconds, err := strconv.Atoi(cmd.Args[1])
+	if err != nil || seconds <= 0 {
+		return &protocol.ErrorResponse{Message: "invalid expire time"}
+	}
+
+	ok := srv.store.VExpireNamespace(namespace, time.Duration(seconds)*time.Second)
+	if ok {
+		return &protocol.IntegerResponse{Value: 1}
+	}
+	return &protocol.IntegerResponse{Value: 0}
+}
+
+func (srv *Server) handleVNS(cmd protocol.Command) protocol.Response {
+	if len(cmd.Args) < 1 {
+		return &protocol.ErrorResponse{Message: "wrong number of arguments for 'VNS' command"}
+	}
+
+	subCmd := strings.ToUpper(cmd.Args[0])
+
+	switch subCmd {
+	case "DROP":
+		if len(cmd.Args) != 2 {
+			return &protocol.ErrorResponse{Message: "wrong number of arguments for 'VNS DROP' command"}
+		}
+		namespace := cmd.Args[1]
+
+		// Drop from store
+		ok := srv.store.VNSDrop(namespace)
+
+		// Also clean up HNSW index if it exists
+		srv.indexesMu.Lock()
+		if _, exists := srv.indexes[namespace]; exists {
+			delete(srv.indexes, namespace)
+		}
+		srv.indexesMu.Unlock()
+
+		if ok {
+			return &protocol.IntegerResponse{Value: 1}
+		}
+		return &protocol.IntegerResponse{Value: 0}
+
+	case "LIST":
+		infos := srv.store.VNSList()
+		if len(infos) == 0 {
+			return &protocol.ArrayResponse{Items: nil}
+		}
+
+		// Return as array of [name, vectorCount, approxMemory, ttlRemaining]
+		var items []protocol.Response
+		for _, info := range infos {
+			items = append(items,
+				&protocol.BulkString{Value: info.Name},
+				&protocol.IntegerResponse{Value: info.VectorCount},
+				&protocol.IntegerResponse{Value: int(info.ApproxMemory)},
+				&protocol.IntegerResponse{Value: info.TTLRemaining},
+			)
+		}
+		return &protocol.ArrayResponse{Items: items}
+
+	default:
+		return &protocol.ErrorResponse{Message: fmt.Sprintf("unknown VNS subcommand '%s'", subCmd)}
+	}
+}

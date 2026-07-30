@@ -1,0 +1,106 @@
+# Nearby Sidecar — Kubernetes Pod Spec
+#
+# Deploys Nearby as a sidecar container alongside an agent container.
+# Both share localhost via the Pod network namespace.
+#
+# Usage:
+#   kubectl apply -f k8s-sidecar.yaml
+#
+# Customize:
+#   - Replace the agent container image with your actual agent
+#   - Adjust memory limits based on expected vector count
+#   - Set SYNAPSE_PASSWORD for production
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: agent-with-nearby
+  labels:
+    app: agent-swarm
+    component: agent-worker
+  annotations:
+    nearby.io/role: "sidecar"
+    nearby.io/version: "1.1.0"
+spec:
+  restartPolicy: Always
+
+  containers:
+    # --- Nearby Sidecar ---
+    - name: nearby
+      image: ghcr.io/sakshamgoswami/nearby:latest
+      ports:
+        - containerPort: 6379
+          name: nearby-tcp
+      env:
+        - name: SYNAPSE_PORT
+          value: "6379"
+        - name: SYNAPSE_AOF_PATH
+          value: "/data/nearby.aof"
+        # Uncomment for production:
+        # - name: SYNAPSE_PASSWORD
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: nearby-secret
+        #       key: password
+      resources:
+        requests:
+          memory: "128Mi"
+          cpu: "100m"
+        limits:
+          memory: "512Mi"
+          cpu: "500m"
+      volumeMounts:
+        - name: nearby-data
+          mountPath: /data
+      readinessProbe:
+        tcpSocket:
+          port: 6379
+        initialDelaySeconds: 2
+        periodSeconds: 5
+      livenessProbe:
+        tcpSocket:
+          port: 6379
+        initialDelaySeconds: 5
+        periodSeconds: 10
+
+    # --- Agent Container ---
+    # Replace with your actual agent image and configuration.
+    - name: agent
+      image: your-agent-image:latest
+      env:
+        - name: NEARBY_HOST
+          value: "localhost"
+        - name: NEARBY_PORT
+          value: "6379"
+        - name: AGENT_ROLE
+          value: "researcher"
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "200m"
+        limits:
+          memory: "1Gi"
+          cpu: "1000m"
+      # Agent connects to localhost:6379 — no service discovery needed
+
+  volumes:
+    - name: nearby-data
+      emptyDir:
+        sizeLimit: 256Mi   # Ephemeral — data dies with the pod
+
+---
+# Optional: Service for external access to Nearby (debugging only)
+apiVersion: v1
+kind: Service
+metadata:
+  name: nearby-debug
+  labels:
+    app: agent-swarm
+spec:
+  type: ClusterIP
+  selector:
+    app: agent-swarm
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: nearby-tcp

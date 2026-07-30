@@ -138,7 +138,8 @@ func (s *Store) KVCount() int {
 	return count
 }
 
-// SweepExpired removes all expired keys. Called by the background expiry goroutine.
+// SweepExpired removes all expired KV keys and expired vector entries.
+// Called by the background expiry goroutine.
 func (s *Store) SweepExpired() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -149,5 +150,31 @@ func (s *Store) SweepExpired() int {
 			count++
 		}
 	}
+	// Sweep expired vectors under the same lock
+	count += s.sweepExpiredVectorsLocked()
+	return count
+}
+
+// sweepExpiredVectorsLocked removes expired vectors. Caller must hold s.mu.Lock().
+func (s *Store) sweepExpiredVectorsLocked() int {
+	count := 0
+	var emptyNamespaces []string
+
+	for nsName, ns := range s.vectors {
+		for id, entry := range ns.entries {
+			if entry.isExpired() {
+				delete(ns.entries, id)
+				count++
+			}
+		}
+		if len(ns.entries) == 0 {
+			emptyNamespaces = append(emptyNamespaces, nsName)
+		}
+	}
+
+	for _, nsName := range emptyNamespaces {
+		delete(s.vectors, nsName)
+	}
+
 	return count
 }

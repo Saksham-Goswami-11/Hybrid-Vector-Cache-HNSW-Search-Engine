@@ -1,0 +1,62 @@
+# Nearby as an Agent Sidecar — Docker Compose reference
+#
+# This deploys Nearby alongside a mock agent process on the same
+# network namespace so the agent talks to localhost:6379 with
+# zero service discovery overhead.
+#
+# Usage:
+#   docker-compose -f docker-compose.sidecar.yml up
+
+version: "3.9"
+
+services:
+  # --- Nearby: ephemeral vector memory grid ---
+  nearby:
+    build:
+      context: ..
+      dockerfile: Dockerfile.server
+    ports:
+      - "6379:6379"
+    environment:
+      SYNAPSE_PORT: "6379"
+      SYNAPSE_AOF_PATH: "/data/nearby.aof"
+    volumes:
+      - nearby-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo PING | nc localhost 6379 | grep PONG"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M   # Size for typical agent scratchpad (1000s of vectors)
+        reservations:
+          memory: 128M
+
+  # --- Agent Process (example placeholder) ---
+  # Replace this with your actual agent container.
+  # It shares the network namespace with Nearby via network_mode.
+  agent:
+    image: alpine:3.19
+    network_mode: "service:nearby"   # shares localhost with nearby
+    depends_on:
+      nearby:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo 'Agent starting — Nearby is on localhost:6379';
+        echo 'PING' | nc localhost 6379;
+        echo 'Agent: writing embedding...';
+        echo 'VSET swarm:run-1 chunk:1 3 0.1 0.2 0.3 META stage researcher EX 300' | nc localhost 6379;
+        echo 'Agent: querying similarity...';
+        echo 'VSIMILARITY swarm:run-1 3 0.1 0.2 0.3 TOP 5' | nc localhost 6379;
+        echo 'Agent: done. Dropping namespace...';
+        echo 'VNS DROP swarm:run-1' | nc localhost 6379;
+        echo 'Agent finished.';
+        sleep 3600
+      "
+
+volumes:
+  nearby-data:
