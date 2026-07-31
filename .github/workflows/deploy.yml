@@ -18,14 +18,33 @@ jobs:
           host: ${{ secrets.AZURE_VM_IP }}
           username: ${{ secrets.AZURE_VM_USERNAME }}
           key: ${{ secrets.AZURE_SSH_KEY }}
+          command_timeout: 10m
           script: |
-            # Navigate to the project directory
-            cd ~/sypnase-cache || exit 1
-            
-            # Cleanly sync to latest origin/main (prevents divergent branch hangs)
-            git fetch origin
+            set -e
+            if [ -d "$HOME/sypnase-cache" ]; then
+              cd "$HOME/sypnase-cache"
+            elif [ -d "$HOME/Hybrid-Vector-Cache-HNSW-Search-Engine" ]; then
+              cd "$HOME/Hybrid-Vector-Cache-HNSW-Search-Engine"
+            else
+              echo "Project directory not found!"
+              exit 1
+            fi
+
+            echo "Current directory: $(pwd)"
+            echo "Fetching latest main..."
+            git fetch origin main
             git reset --hard origin/main
-            
-            # Restart services
-            sudo docker-compose down || docker compose down || true
-            sudo docker-compose up -d --build || docker compose up -d --build
+
+            echo "Building and restarting Docker containers..."
+            if command -v docker-compose &> /dev/null; then
+              docker-compose down || true
+              docker-compose up -d --build
+            elif docker compose version &> /dev/null; then
+              docker compose down || true
+              docker compose up -d --build
+            else
+              sudo -n docker-compose down || true
+              sudo -n docker-compose up -d --build
+            fi
+
+            echo "Deployment successfully completed!"
