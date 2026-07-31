@@ -8,19 +8,24 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
+        timeout-minutes: 10
         with:
           host: ${{ secrets.AZURE_VM_IP }}
           username: ${{ secrets.AZURE_VM_USERNAME }}
           key: ${{ secrets.AZURE_SSH_KEY }}
           command_timeout: 10m
+          script_stop: true
           script: |
             set -e
+            export GIT_TERMINAL_PROMPT=0
+
             if [ -d "$HOME/sypnase-cache" ]; then
               cd "$HOME/sypnase-cache"
             elif [ -d "$HOME/Hybrid-Vector-Cache-HNSW-Search-Engine" ]; then
@@ -36,15 +41,24 @@ jobs:
             git reset --hard origin/main
 
             echo "Building and restarting Docker containers..."
-            if command -v docker-compose &> /dev/null; then
-              docker-compose down || true
-              docker-compose up -d --build
-            elif docker compose version &> /dev/null; then
-              docker compose down || true
-              docker compose up -d --build
+            DOCKER_CMD=""
+            if docker compose version &> /dev/null && docker info &> /dev/null; then
+              DOCKER_CMD="docker compose"
+            elif docker-compose version &> /dev/null && docker-compose ps &> /dev/null; then
+              DOCKER_CMD="docker-compose"
+            elif sudo -n docker compose version &> /dev/null; then
+              DOCKER_CMD="sudo -n docker compose"
+            elif sudo -n docker-compose version &> /dev/null; then
+              DOCKER_CMD="sudo -n docker-compose"
+            elif command -v docker-compose &> /dev/null; then
+              DOCKER_CMD="docker-compose"
             else
-              sudo -n docker-compose down || true
-              sudo -n docker-compose up -d --build
+              DOCKER_CMD="docker compose"
             fi
 
+            echo "Using Docker command: $DOCKER_CMD"
+            $DOCKER_CMD down || true
+            $DOCKER_CMD up -d --build
+
             echo "Deployment successfully completed!"
+
