@@ -2,7 +2,17 @@
 
 **An in-memory vector cache, HNSW search engine, and ephemeral memory grid for AI agent swarms.**
 
-Go 1.22+ · MIT License · [Go Report Card](https://goreportcard.com/report/github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine) · [Tests](https://github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/actions)
+[![CI](https://github.com/Saksham-Goswami-11/Hybrid-Vector-Cache-HNSW-Search-Engine/actions/workflows/ci.yml/badge.svg)](https://github.com/Saksham-Goswami-11/Hybrid-Vector-Cache-HNSW-Search-Engine/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Saksham-Goswami-11/Hybrid-Vector-Cache-HNSW-Search-Engine)](https://goreportcard.com/report/github.com/Saksham-Goswami-11/Hybrid-Vector-Cache-HNSW-Search-Engine)
+Go 1.22+ · MIT License
+
+---
+
+## Documentation Index & Start Here
+
+| Document | Description | Target Audience |
+|---|---|---|
+| **[AUTOGEN_NEARBY_INTEGRATION_REPORT.md](AUTOGEN_NEARBY_INTEGRATION_REPORT.md)** | **Primary Benchmark & Architecture Report** — Ephemeral vector grid for Microsoft AutoGen v0.4, 600-goroutine stress tests & ChromaDB comparison | **Start Here** for benchmarks & architecture validation |
 
 ---
 
@@ -23,7 +33,7 @@ One binary. One TCP port. A Redis-like text protocol you can speak with `netcat`
 
 **Build from source**
 ```bash
-git clone https://github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine
+git clone https://github.com/Saksham-Goswami-11/Hybrid-Vector-Cache-HNSW-Search-Engine
 cd nearby
 go build -o nearby ./cmd/server
 ./nearby --port 6379
@@ -156,23 +166,23 @@ BGSAVE → +Background saving started
 ## The Go Client
 
 ```go
-import "github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/pkg/client"
+import "github.com/Saksham-Goswami-11/Hybrid-Vector-Cache-HNSW-Search-Engine/pkg/client"
 
 c, err := client.New(client.Options{Addr: "localhost:6379", MaxConns: 10})
 
 err = c.VSet(ctx, client.VSetArgs{
- Namespace: "docs",
- ID: "chunk:42",
- Vector: []float32{0.18, -0.44, 0.99, 0.00},
- Metadata: map[string]string{"source": "paper.pdf", "page": "7"},
+	Namespace: "docs",
+	ID:        "chunk:42",
+	Vector:    []float32{0.18, -0.44, 0.99, 0.00},
+	Metadata:  map[string]string{"source": "paper.pdf", "page": "7"},
 })
 
 err = c.VIndexCreate(ctx, client.VIndexCreateArgs{
- Namespace: "docs", M: 16, EfConstruction: 200, EfSearch: 100,
+	Namespace: "docs", M: 16, EfConstruction: 200, EfSearch: 100,
 })
 
 results, err := c.VSimilarity(ctx, client.VSimilarityArgs{
- Namespace: "docs", Vector: queryEmbedding, TopK: 5,
+	Namespace: "docs", Vector: queryEmbedding, TopK: 5,
 })
 ```
 
@@ -200,17 +210,17 @@ Loads 50 pre-chunked passages, stores them, drops you into a REPL. Each question
 
 ```json
 {
- "mcpServers": {
- "nearby-rag": {
- "command": "/path/to/mcp_server/.venv/bin/python3",
- "args": ["/path/to/mcp_server/server.py"],
- "env": {
- "OPENAI_API_KEY": "sk-your-openai-api-key",
- "KNOWLEDGE_BASE_DIR": "/path/to/knowledge_base",
- "SYNAPSE_PORT": "6380"
- }
- }
- }
+  "mcpServers": {
+    "nearby-rag": {
+      "command": "/path/to/mcp_server/.venv/bin/python3",
+      "args": ["/path/to/mcp_server/server.py"],
+      "env": {
+        "OPENAI_API_KEY": "sk-your-openai-api-key",
+        "KNOWLEDGE_BASE_DIR": "/path/to/knowledge_base",
+        "NEARBY_PORT": "6380"
+      }
+    }
+  }
 }
 ```
 
@@ -224,8 +234,8 @@ Drop PDFs, markdown, or text into `knowledge_base/`. The MCP server chunks, embe
 nearby/
 ├── cmd/server/main.go # Entry point
 ├── internal/
-│ ├── server/server.go # TCP accept loop
-│ ├── protocol/ # Parser, command/response types
+│ ├── server/server.go # TCP accept loop & command handlers
+│ ├── protocol/ # Parser, command/response types, fuzz tests
 │ ├── store/store.go # Thread-safe in-memory store
 │ ├── similarity/ # Cosine math, worker pool, top-K
 │ ├── hnsw/ # HNSW graph, per-node locking
@@ -245,7 +255,7 @@ nearby/
 ```bash
 go test -race -v ./... # required before any PR
 go test -bench=. -benchmem ./bench/...
-go test -fuzz=FuzzParser ./internal/protocol/... -fuzztime=60s
+go test -fuzz=FuzzParse ./internal/protocol/... -fuzztime=60s
 go fmt ./...
 ```
 
@@ -272,17 +282,18 @@ The race detector hasn't fired on the similarity engine or HNSW index a result o
 - [x] TCP server, goroutine-per-connection
 - [x] KV namespace (SET, GET, DEL, EXPIRE, TTL)
 - [x] Vector namespace (VSET, VGET, VDEL, VCOUNT)
-- [x] Cosine similarity engine with worker pool
+- [x] Cosine & Dot product similarity engine with worker pool
 - [x] Top-K search, min-heap
 - [x] AOF persistence, CRC32 per entry
 - [x] Go client library
 - [x] RAG demo (mock + live)
-- [x] MCP server for Claude Desktop
+- [x] MCP server for Claude Desktop / Cursor
 - [x] HNSW graph index (v2.0)
 - [x] Binary snapshot persistence for HNSW
-- [x] Token authentication (`--password`)
-- [ ] Dot product similarity mode (`METHOD DOT`)
-- [ ] Batch VSET (`VMSET`) for bulk ingestion
+- [x] Token authentication (`--password`) & TLS encryption (`--tls`)
+- [x] Batch VSET (`VMSET`) for bulk ingestion (2.22x faster batch add)
+- [x] Ephemeral Multi-Agent Swarm Memory (Microsoft AutoGen v0.4 integration)
+- [x] Namespace Lifecycle Management (`VNS DROP`, `VNS LIST`, `VEXPIRE`)
 - [ ] Prometheus metrics endpoint
 
 ---

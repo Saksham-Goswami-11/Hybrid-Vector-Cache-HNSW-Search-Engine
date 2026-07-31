@@ -29,6 +29,11 @@ microsoft-autogen/
 # Frontend directory
 frontend/
 
+# Markdown Files: Only allow README.md and AUTOGEN_NEARBY_INTEGRATION_REPORT.md on GitHub
+*.md
+!README.md
+!AUTOGEN_NEARBY_INTEGRATION_REPORT.md
+
 # IDE & Editor
 .vscode/
 .idea/

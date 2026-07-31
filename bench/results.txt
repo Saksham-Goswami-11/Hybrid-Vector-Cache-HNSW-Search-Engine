@@ -1,0 +1,42 @@
+2026/07/31 16:33:10 server listening on :0
+2026/07/31 16:33:10 nearby listening on [::]:58319
+2026/07/31 16:33:10 nearby shut down gracefully
+goos: darwin
+goarch: arm64
+pkg: github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/bench
+cpu: Apple M5
+BenchmarkSetGet-10             	2026/07/31 16:33:10 server listening on :0
+2026/07/31 16:33:10 nearby listening on [::]:58321
+2026/07/31 16:33:10 nearby shut down gracefully
+2026/07/31 16:33:10 server listening on :0
+2026/07/31 16:33:10 nearby listening on [::]:58323
+2026/07/31 16:33:11 nearby shut down gracefully
+     484	   2496163 ns/op	   10351 B/op	      48 allocs/op
+2026/07/31 16:33:11 server listening on :0
+2026/07/31 16:33:11 nearby listening on [::]:58325
+2026/07/31 16:33:11 nearby shut down gracefully
+BenchmarkVSet1536-10           	2026/07/31 16:33:11 server listening on :0
+2026/07/31 16:33:11 nearby listening on [::]:58327
+2026/07/31 16:33:11 nearby shut down gracefully
+2026/07/31 16:33:11 server listening on :0
+2026/07/31 16:33:11 nearby listening on [::]:58329
+2026/07/31 16:33:13 nearby shut down gracefully
+     711	   1927192 ns/op	  349476 B/op	    4666 allocs/op
+2026/07/31 16:33:13 server listening on :0
+2026/07/31 16:33:13 nearby listening on [::]:58331
+2026/07/31 16:33:15 nearby shut down gracefully
+BenchmarkVSimilarity1K-10      	2026/07/31 16:33:15 server listening on :0
+2026/07/31 16:33:15 nearby listening on [::]:58333
+2026/07/31 16:33:17 nearby shut down gracefully
+2026/07/31 16:33:17 server listening on :0
+2026/07/31 16:33:17 nearby listening on [::]:58335
+2026/07/31 16:33:20 nearby shut down gracefully
+     500	   2605872 ns/op	  360693 B/op	    4912 allocs/op
+2026/07/31 16:33:20 server listening on :0
+2026/07/31 16:33:20 nearby listening on [::]:58338
+2026/07/31 16:33:39 nearby shut down gracefully
+BenchmarkVSimilarity10K-10     	2026/07/31 16:33:39 server listening on :0
+2026/07/31 16:33:39 nearby listening on [::]:58343
+2026/07/31 16:33:57 nearby shut down gracefully
+2026/07/31 16:33:57 server listening on :0
+2026/07/31 16:33:57 nearby listening on [::]:58346
