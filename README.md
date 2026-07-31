@@ -1,6 +1,6 @@
-# Nearby
+# Nearby: Sub-Millisecond Ephemeral Vector Engine in Go
 
-**An in-memory vector cache and similarity engine written in Go zero dependencies, single binary.**
+**An in-memory vector cache, HNSW search engine, and ephemeral memory grid for AI agent swarms.**
 
 Go 1.22+ · MIT License · [Go Report Card](https://goreportcard.com/report/github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine) · [Tests](https://github.com/sakshamgoswami/Hybrid-Vector-Cache-HNSW-Search-Engine/actions)
 
