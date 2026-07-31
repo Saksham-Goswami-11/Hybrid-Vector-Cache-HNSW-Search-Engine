@@ -1,24 +1,25 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
+
+# Copy dependency manifests
 COPY go.mod ./
-# COPY go.sum ./ # Uncomment if go.sum is added
 RUN go mod download
 
-COPY . .
+# Copy source code
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+COPY pkg/ ./pkg/
 
-# Build a statically linked binary
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags="-w -s" -o nearby ./cmd/server
+# Build static binary
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o nearby ./cmd/server
 
-# Final stage
+# Final scratch image (< 15MB)
 FROM scratch
 
-# Copy the binary from the builder stage
 COPY --from=builder /app/nearby /nearby
 
-# Expose the default port
 EXPOSE 6379
 
-# Entry point
 ENTRYPOINT ["/nearby"]

@@ -1,0 +1,16 @@
+.git
+.gitignore
+.venv
+venv
+mcp_server/.venv
+frontend
+data
+microsoft-autogen
+knowledge_base
+knowledge_base_test
+*.aof
+*.snap
+*.md
+*.log
+*.pem
+.env
