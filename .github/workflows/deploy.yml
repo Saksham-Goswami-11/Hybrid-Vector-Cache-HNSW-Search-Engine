@@ -20,11 +20,12 @@ jobs:
           key: ${{ secrets.AZURE_SSH_KEY }}
           script: |
             # Navigate to the project directory
-            cd ~/sypnase-cache
+            cd ~/sypnase-cache || exit 1
             
-            # Pull latest code
-            git pull origin main
+            # Cleanly sync to latest origin/main (prevents divergent branch hangs)
+            git fetch origin
+            git reset --hard origin/main
             
             # Restart services
-            sudo docker-compose down
-            sudo docker-compose up -d --build
+            sudo docker-compose down || docker compose down || true
+            sudo docker-compose up -d --build || docker compose up -d --build
