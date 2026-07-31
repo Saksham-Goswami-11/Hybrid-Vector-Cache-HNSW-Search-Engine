@@ -9,9 +9,9 @@ class SynapseError(Exception):
 
 class SynapseClient:
     def __init__(self, host: str = None, port: int = None):
-        self.host = host or os.environ.get("SYNAPSE_HOST", "localhost")
-        self.port = port if port is not None else int(os.environ.get("SYNAPSE_PORT", 6380))
-        self.password = os.environ.get("SYNAPSE_PASSWORD")
+        self.host = host or os.environ.get("NEARBY_HOST", "localhost")
+        self.port = port if port is not None else int(os.environ.get("NEARBY_PORT", 6380))
+        self.password = os.environ.get("NEARBY_PASSWORD")
         self.lock = threading.Lock()
 
     def _readline(self, sock: socket.socket) -> bytes:
@@ -61,9 +61,9 @@ class SynapseClient:
         with self.lock:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as raw_socket:
                 s = raw_socket
-                if os.environ.get("SYNAPSE_TLS", "false").lower() == "true":
+                if os.environ.get("NEARBY_TLS", "false").lower() == "true":
                     context = ssl.create_default_context()
-                    if os.environ.get("SYNAPSE_INSECURE_SKIP_VERIFY", "false").lower() == "true":
+                    if os.environ.get("NEARBY_INSECURE_SKIP_VERIFY", "false").lower() == "true":
                         context.check_hostname = False
                         context.verify_mode = ssl.CERT_NONE
                     s = context.wrap_socket(raw_socket, server_hostname=self.host)

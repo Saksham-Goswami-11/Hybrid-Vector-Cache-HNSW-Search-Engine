@@ -12,7 +12,7 @@ _retriever = None
 def get_retriever():
     global _retriever
     if _retriever is None:
-        port = int(os.environ.get("SYNAPSE_PORT", 6380))
+        port = int(os.environ.get("NEARBY_PORT", 6380))
         directory = os.environ.get("KNOWLEDGE_BASE_DIR", "./knowledge_base")
         _retriever = HybridRetriever(directory=directory, port=port)
     return _retriever

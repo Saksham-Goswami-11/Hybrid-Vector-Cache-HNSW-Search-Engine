@@ -33,7 +33,7 @@ The secret database key is 10-20-30.
     # Inject target directory to stdio subprocess
     env = os.environ.copy()
     env["KNOWLEDGE_BASE_DIR"] = test_dir
-    env["SYNAPSE_PORT"] = "6380"
+    env["NEARBY_PORT"] = "6380"
     
     server_params = StdioServerParameters(
         command=sys.executable,

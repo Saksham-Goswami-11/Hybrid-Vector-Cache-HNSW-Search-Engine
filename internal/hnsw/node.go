@@ -14,7 +14,22 @@ type Node struct {
 	// Links[1..L] have up to M neighbors each.
 	Links [][]uint32
 
-	mu sync.RWMutex // per-node lock for concurrent link mutation
+	Deleted bool         // tombstone flag for soft deletion
+	mu      sync.RWMutex // per-node lock for concurrent link mutation
+}
+
+// IsDeleted reports whether this node is tombstoned.
+func (n *Node) IsDeleted() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.Deleted
+}
+
+// SetDeleted marks or unmarks this node as tombstoned.
+func (n *Node) SetDeleted(deleted bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.Deleted = deleted
 }
 
 // NewNode creates a node assigned to the given maximum layer.

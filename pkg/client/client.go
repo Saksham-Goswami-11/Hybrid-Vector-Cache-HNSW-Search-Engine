@@ -88,15 +88,36 @@ func (c *Client) dial() (net.Conn, error) {
 }
 
 // getConn retrieves a connection from the pool or creates a new one.
+// Validates connection health before returning it.
 func (c *Client) getConn(ctx context.Context) (net.Conn, error) {
-	select {
-	case conn := <-c.pool:
-		if conn != nil {
-			return conn, nil
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case conn := <-c.pool:
+			if conn != nil {
+				// Perform quick health check on pooled connection
+				conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+				var one [1]byte
+				_, err := conn.Read(one[:])
+				conn.SetReadDeadline(time.Time{})
+				if err != nil {
+					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+						// Socket is healthy (timeout expected on empty buffer read)
+						return conn, nil
+					}
+					// Connection closed or broken by server, discard
+					conn.Close()
+					continue
+				}
+				// Unexpected data on idle socket, discard
+				conn.Close()
+				continue
+			}
+		default:
+			return c.dial()
 		}
-	default:
 	}
-	return c.dial()
 }
 
 // returnConn returns a connection to the pool.

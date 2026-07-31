@@ -295,10 +295,14 @@ func (idx *Index) Search(query []float32, K int, ef int) ([]SearchResult, error)
 		if int(item.ID) >= len(idx.nodes) {
 			continue
 		}
+		node := idx.nodes[item.ID]
+		if node.IsDeleted() {
+			continue
+		}
 		results = append(results, SearchResult{
 			ID:       idx.reverseMap[item.ID],
 			Score:    1.0 - item.Dist,
-			Metadata: idx.nodes[item.ID].Metadata,
+			Metadata: node.Metadata,
 		})
 	}
 

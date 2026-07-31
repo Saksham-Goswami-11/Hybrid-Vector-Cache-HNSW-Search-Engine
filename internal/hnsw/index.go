@@ -165,3 +165,36 @@ func (idx *Index) MemoryBytes() int64 {
 	}
 	return total
 }
+
+// Delete marks a node as tombstoned in the index and removes it from idMap.
+// Returns true if the key existed and was marked deleted.
+func (idx *Index) Delete(key string) bool {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	id, exists := idx.idMap[key]
+	if !exists {
+		return false
+	}
+
+	delete(idx.idMap, key)
+	node := idx.nodes[id]
+	node.SetDeleted(true)
+
+	// Elect a new non-deleted entry point if the deleted node was the entry point
+	if id == idx.entryPoint {
+		foundNewEP := false
+		for newID, newKey := range idx.reverseMap {
+			if newKey != "" && !idx.nodes[newID].IsDeleted() {
+				idx.entryPoint = uint32(newID)
+				foundNewEP = true
+				break
+			}
+		}
+		if !foundNewEP {
+			idx.entryPoint = 0
+		}
+	}
+
+	return true
+}

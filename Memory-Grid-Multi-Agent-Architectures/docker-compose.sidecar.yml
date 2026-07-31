@@ -18,8 +18,8 @@ services:
     ports:
       - "6379:6379"
     environment:
-      SYNAPSE_PORT: "6379"
-      SYNAPSE_AOF_PATH: "/data/nearby.aof"
+      NEARBY_PORT: "6379"
+      NEARBY_AOF_PATH: "/data/nearby.aof"
     volumes:
       - nearby-data:/data
     restart: unless-stopped

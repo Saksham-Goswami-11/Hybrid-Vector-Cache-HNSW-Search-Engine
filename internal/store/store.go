@@ -18,11 +18,14 @@ func (e *kvEntry) isExpired() bool {
 }
 
 // Store is the thread-safe in-memory data store.
-// It manages both the key-value namespace and the vector namespace.
+// It uses sharded locking: kvMu protects KV keys, vecMu protects namespace map operations,
+// and each VectorNamespace has its own RWMutex for high-concurrency vector operations across namespaces.
 type Store struct {
 	kv      map[string]*kvEntry
+	kvMu    sync.RWMutex
+
 	vectors map[string]*VectorNamespace
-	mu      sync.RWMutex
+	vecMu   sync.RWMutex
 }
 
 // New creates an empty Store.
@@ -37,15 +40,15 @@ func New() *Store {
 
 // Set stores a key-value pair with no expiration.
 func (s *Store) Set(key, value string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.kvMu.Lock()
+	defer s.kvMu.Unlock()
 	s.kv[key] = &kvEntry{Value: value}
 }
 
 // SetWithTTL stores a key-value pair that expires after ttl.
 func (s *Store) SetWithTTL(key, value string, ttl time.Duration) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.kvMu.Lock()
+	defer s.kvMu.Unlock()
 	s.kv[key] = &kvEntry{
 		Value:     value,
 		ExpiresAt: time.Now().Add(ttl),
@@ -56,33 +59,33 @@ func (s *Store) SetWithTTL(key, value string, ttl time.Duration) {
 // Get retrieves the value for a key.
 // Returns ("", false) if the key doesn't exist or has expired (lazy expiry).
 func (s *Store) Get(key string) (string, bool) {
-	s.mu.RLock()
+	s.kvMu.RLock()
 	entry, ok := s.kv[key]
 	if !ok {
-		s.mu.RUnlock()
+		s.kvMu.RUnlock()
 		return "", false
 	}
 	if entry.isExpired() {
-		s.mu.RUnlock()
+		s.kvMu.RUnlock()
 		// Upgrade to write lock to delete expired key
-		s.mu.Lock()
+		s.kvMu.Lock()
 		// Double-check after acquiring write lock
 		entry, ok = s.kv[key]
 		if ok && entry.isExpired() {
 			delete(s.kv, key)
 		}
-		s.mu.Unlock()
+		s.kvMu.Unlock()
 		return "", false
 	}
 	val := entry.Value
-	s.mu.RUnlock()
+	s.kvMu.RUnlock()
 	return val, true
 }
 
 // Del deletes one or more keys. Returns the count of keys that were actually deleted.
 func (s *Store) Del(keys ...string) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.kvMu.Lock()
+	defer s.kvMu.Unlock()
 	count := 0
 	for _, key := range keys {
 		if _, ok := s.kv[key]; ok {
@@ -95,8 +98,8 @@ func (s *Store) Del(keys ...string) int {
 
 // Expire sets a TTL on an existing key. Returns true if the key exists.
 func (s *Store) Expire(key string, ttl time.Duration) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.kvMu.Lock()
+	defer s.kvMu.Unlock()
 	entry, ok := s.kv[key]
 	if !ok || entry.isExpired() {
 		return false
@@ -109,8 +112,8 @@ func (s *Store) Expire(key string, ttl time.Duration) bool {
 // TTL returns the remaining TTL for a key in seconds.
 // Returns -1 if the key exists but has no TTL, -2 if the key doesn't exist.
 func (s *Store) TTL(key string) int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.kvMu.RLock()
+	defer s.kvMu.RUnlock()
 	entry, ok := s.kv[key]
 	if !ok || entry.isExpired() {
 		return -2
@@ -127,8 +130,8 @@ func (s *Store) TTL(key string) int {
 
 // KVCount returns the number of non-expired keys (for INFO command).
 func (s *Store) KVCount() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.kvMu.RLock()
+	defer s.kvMu.RUnlock()
 	count := 0
 	for _, entry := range s.kv {
 		if !entry.isExpired() {
@@ -140,14 +143,9 @@ func (s *Store) KVCount() int {
 
 // SweepExpired removes all expired KV keys and expired vector entries.
 // Called by the background expiry goroutine (every 100ms from server.expirySweep).
-//
-// AutoGen compatibility: this unified sweep was extended to also sweep expired
-// vector entries (via sweepExpiredVectorsLocked) under a single lock acquisition.
-// This is critical for multi-agent workloads where thousands of short-lived
-// embeddings expire concurrently during swarm runs.
 func (s *Store) SweepExpired() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Sweep KV keys under kvMu
+	s.kvMu.Lock()
 	count := 0
 	for key, entry := range s.kv {
 		if entry.isExpired() {
@@ -155,21 +153,15 @@ func (s *Store) SweepExpired() int {
 			count++
 		}
 	}
-	// Sweep expired vectors under the same lock
-	count += s.sweepExpiredVectorsLocked()
-	return count
-}
+	s.kvMu.Unlock()
 
-// sweepExpiredVectorsLocked removes expired vectors. Caller must hold s.mu.Lock().
-//
-// AutoGen compatibility: added to support ephemeral vector TTL. When agent swarm
-// runs set namespace-level or per-vector TTLs, this function reclaims memory for
-// all expired vectors and automatically purges empty namespaces.
-func (s *Store) sweepExpiredVectorsLocked() int {
-	count := 0
+	// Sweep vector namespaces under vecMu
+	s.vecMu.Lock()
+	defer s.vecMu.Unlock()
+
 	var emptyNamespaces []string
-
 	for nsName, ns := range s.vectors {
+		ns.mu.Lock()
 		for id, entry := range ns.entries {
 			if entry.isExpired() {
 				delete(ns.entries, id)
@@ -179,6 +171,33 @@ func (s *Store) sweepExpiredVectorsLocked() int {
 		if len(ns.entries) == 0 {
 			emptyNamespaces = append(emptyNamespaces, nsName)
 		}
+		ns.mu.Unlock()
+	}
+
+	for _, nsName := range emptyNamespaces {
+		delete(s.vectors, nsName)
+	}
+
+	return count
+}
+
+// sweepExpiredVectorsLocked is kept for backwards compatibility with internal callers.
+func (s *Store) sweepExpiredVectorsLocked() int {
+	count := 0
+	var emptyNamespaces []string
+
+	for nsName, ns := range s.vectors {
+		ns.mu.Lock()
+		for id, entry := range ns.entries {
+			if entry.isExpired() {
+				delete(ns.entries, id)
+				count++
+			}
+		}
+		if len(ns.entries) == 0 {
+			emptyNamespaces = append(emptyNamespaces, nsName)
+		}
+		ns.mu.Unlock()
 	}
 
 	for _, nsName := range emptyNamespaces {

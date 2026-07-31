@@ -4,14 +4,14 @@ from typing import List, Dict, Any, Tuple
 from rank_bm25 import BM25Okapi
 from openai import OpenAI
 from client import SynapseClient
-from ingest import extract_text, chunk_text, KNOWLEDGE_BASE_DIR, SYNAPSE_PORT
+from ingest import extract_text, chunk_text, KNOWLEDGE_BASE_DIR, NEARBY_PORT
 
 openai_client = None
 if os.environ.get("OPENAI_API_KEY"):
     openai_client = OpenAI()
 
 class HybridRetriever:
-    def __init__(self, directory: str = KNOWLEDGE_BASE_DIR, port: int = SYNAPSE_PORT):
+    def __init__(self, directory: str = KNOWLEDGE_BASE_DIR, port: int = NEARBY_PORT):
         self.directory = os.path.abspath(directory)
         self.client = SynapseClient(port=port)
         self._corpus_cache: Dict[str, Dict[str, Any]] = {}  # filepath -> {mtime, chunks}

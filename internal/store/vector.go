@@ -17,7 +17,7 @@
 //   - Namespace lifecycle (VNSDrop, VNSList)
 //     Enables instant teardown of an entire swarm run's memory without per-key deletion.
 //
-//   - Lazy expiry on read (VGet) and background sweep (sweepExpiredVectorsLocked)
+//   - Lazy expiry on read (VGet) and background sweep (SweepExpired)
 //     Ensures expired agent embeddings are reclaimed without blocking hot-path operations.
 package store
 
@@ -28,8 +28,6 @@ import (
 )
 
 // VectorEntry holds a single vector with its ID, metadata, and optional TTL.
-// The ExpiresAt and HasTTL fields were added for AutoGen ephemeral memory support —
-// agent swarms typically set short TTLs (seconds to minutes) on intermediate embeddings.
 type VectorEntry struct {
 	ID        string
 	Vector    []float32
@@ -45,11 +43,10 @@ func (e *VectorEntry) isExpired() bool {
 
 // VectorNamespace is a named partition of vectors with optional default TTL.
 type VectorNamespace struct {
-	entries       map[string]*VectorEntry
-	mu            sync.RWMutex
-	DefaultTTL    time.Duration
-	HasDefaultTTL bool
-	// Track when the namespace-level TTL was set for VNS LIST reporting
+	entries           map[string]*VectorEntry
+	mu                sync.RWMutex
+	DefaultTTL        time.Duration
+	HasDefaultTTL     bool
 	NamespaceTTLSetAt time.Time
 }
 
@@ -70,37 +67,55 @@ type VNamespaceInfo struct {
 }
 
 // VMSetEntry represents a single entry in a batch VMSET operation.
-// AutoGen compatibility: maps to NearbyVectorMemory.add_batch() in nearby_memory.py.
 type VMSetEntry struct {
 	ID       string
 	Vector   []float32
 	Metadata map[string]string
 }
 
-// --- Vector Store Operations (on the main Store) ---
+// getNamespace returns an existing VectorNamespace or (nil, false).
+func (s *Store) getNamespace(name string) (*VectorNamespace, bool) {
+	s.vecMu.RLock()
+	ns, ok := s.vectors[name]
+	s.vecMu.RUnlock()
+	return ns, ok
+}
+
+// getOrCreateNamespace returns an existing or newly created VectorNamespace.
+func (s *Store) getOrCreateNamespace(name string) *VectorNamespace {
+	s.vecMu.RLock()
+	ns, ok := s.vectors[name]
+	s.vecMu.RUnlock()
+	if ok {
+		return ns
+	}
+
+	s.vecMu.Lock()
+	defer s.vecMu.Unlock()
+	ns, ok = s.vectors[name]
+	if !ok {
+		ns = newVectorNamespace()
+		s.vectors[name] = ns
+	}
+	return ns
+}
+
+// --- Vector Store Operations (Per-Namespace Lock Sharding) ---
 
 // VSet stores a vector in the given namespace with no TTL.
-// Returns an error if the provided float count doesn't match dim.
 func (s *Store) VSet(namespace, id string, dim int, vec []float32, meta map[string]string) error {
 	return s.VSetWithTTL(namespace, id, dim, vec, meta, 0)
 }
 
 // VSetWithTTL stores a vector in the given namespace with an optional TTL.
-// If ttl is 0, the vector inherits the namespace's default TTL (if any).
-// If ttl is negative, the vector has no TTL regardless of namespace default.
 func (s *Store) VSetWithTTL(namespace, id string, dim int, vec []float32, meta map[string]string, ttl time.Duration) error {
 	if len(vec) != dim {
 		return fmt.Errorf("dimension mismatch: declared %d, got %d floats", dim, len(vec))
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	ns, ok := s.vectors[namespace]
-	if !ok {
-		ns = newVectorNamespace()
-		s.vectors[namespace] = ns
-	}
+	ns := s.getOrCreateNamespace(namespace)
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
 
 	// Copy the vector to own the memory
 	vecCopy := make([]float32, len(vec))
@@ -129,27 +144,16 @@ func (s *Store) VSetWithTTL(namespace, id string, dim int, vec []float32, meta m
 		entry.ExpiresAt = time.Now().Add(ns.DefaultTTL)
 		entry.HasTTL = true
 	}
-	// ttl < 0 means explicitly no TTL
 
 	ns.entries[id] = entry
 	return nil
 }
 
 // VMSet batch-stores multiple vectors in the given namespace in a single call.
-// All vectors must match the declared dimension. Returns the count of successfully stored vectors.
-//
-// AutoGen compatibility: this is the Go-side handler for the VMSET wire command,
-// invoked by NearbyVectorStore.ingest_batch() in nearby_memory.py. Benchmarked at
-// 2.22x faster than ChromaDB batch add() for 100-document ingestion.
 func (s *Store) VMSet(namespace string, dim int, entries []VMSetEntry) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	ns, ok := s.vectors[namespace]
-	if !ok {
-		ns = newVectorNamespace()
-		s.vectors[namespace] = ns
-	}
+	ns := s.getOrCreateNamespace(namespace)
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
 
 	count := 0
 	for i, e := range entries {
@@ -157,11 +161,9 @@ func (s *Store) VMSet(namespace string, dim int, entries []VMSetEntry) (int, err
 			return count, fmt.Errorf("entry %d (%s): dimension mismatch: declared %d, got %d floats", i, e.ID, dim, len(e.Vector))
 		}
 
-		// Copy vector
 		vecCopy := make([]float32, len(e.Vector))
 		copy(vecCopy, e.Vector)
 
-		// Copy metadata
 		var metaCopy map[string]string
 		if len(e.Metadata) > 0 {
 			metaCopy = make(map[string]string, len(e.Metadata))
@@ -176,7 +178,6 @@ func (s *Store) VMSet(namespace string, dim int, entries []VMSetEntry) (int, err
 			Metadata: metaCopy,
 		}
 
-		// Apply namespace default TTL if set
 		if ns.HasDefaultTTL {
 			entry.ExpiresAt = time.Now().Add(ns.DefaultTTL)
 			entry.HasTTL = true
@@ -189,47 +190,42 @@ func (s *Store) VMSet(namespace string, dim int, entries []VMSetEntry) (int, err
 	return count, nil
 }
 
-// VGet retrieves a vector entry from a namespace.
-// Performs lazy expiry: returns (nil, false) if the entry has expired.
+// VGet retrieves a vector entry from a namespace. Performs lazy expiry.
 func (s *Store) VGet(namespace, id string) (*VectorEntry, bool) {
-	s.mu.RLock()
-	ns, ok := s.vectors[namespace]
+	ns, ok := s.getNamespace(namespace)
 	if !ok {
-		s.mu.RUnlock()
 		return nil, false
 	}
+
+	ns.mu.RLock()
 	entry, ok := ns.entries[id]
 	if !ok {
-		s.mu.RUnlock()
+		ns.mu.RUnlock()
 		return nil, false
 	}
 	if entry.isExpired() {
-		s.mu.RUnlock()
-		// Upgrade to write lock for lazy deletion
-		s.mu.Lock()
-		ns, ok = s.vectors[namespace]
-		if ok {
-			entry, ok = ns.entries[id]
-			if ok && entry.isExpired() {
-				delete(ns.entries, id)
-			}
+		ns.mu.RUnlock()
+		ns.mu.Lock()
+		entry, ok = ns.entries[id]
+		if ok && entry.isExpired() {
+			delete(ns.entries, id)
 		}
-		s.mu.Unlock()
+		ns.mu.Unlock()
 		return nil, false
 	}
-	s.mu.RUnlock()
+	ns.mu.RUnlock()
 	return entry, true
 }
 
 // VDel removes a vector from a namespace. Returns true if it existed.
 func (s *Store) VDel(namespace, id string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	ns, ok := s.vectors[namespace]
+	ns, ok := s.getNamespace(namespace)
 	if !ok {
 		return false
 	}
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
+
 	if _, ok := ns.entries[id]; !ok {
 		return false
 	}
@@ -239,13 +235,12 @@ func (s *Store) VDel(namespace, id string) bool {
 
 // VCount returns the number of non-expired vectors in a namespace.
 func (s *Store) VCount(namespace string) int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	ns, ok := s.vectors[namespace]
+	ns, ok := s.getNamespace(namespace)
 	if !ok {
 		return 0
 	}
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
 
 	count := 0
 	for _, entry := range ns.entries {
@@ -257,16 +252,13 @@ func (s *Store) VCount(namespace string) int {
 }
 
 // VSnapshot returns a snapshot of all non-expired vector entries in a namespace.
-// The slice headers are copied so similarity computation can happen
-// outside the lock without racing with concurrent writes.
 func (s *Store) VSnapshot(namespace string) []*VectorEntry {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	ns, ok := s.vectors[namespace]
+	ns, ok := s.getNamespace(namespace)
 	if !ok {
 		return nil
 	}
+	ns.mu.RLock()
+	defer ns.mu.RUnlock()
 
 	snapshot := make([]*VectorEntry, 0, len(ns.entries))
 	for _, entry := range ns.entries {
@@ -281,27 +273,18 @@ func (s *Store) VSnapshot(namespace string) []*VectorEntry {
 }
 
 // VExpireNamespace sets a default TTL for an entire namespace.
-// All existing non-expired entries in the namespace get this TTL applied.
-// Future entries inherit this TTL unless they specify their own.
-// Returns false if the namespace doesn't exist.
-//
-// AutoGen compatibility: invoked via the VEXPIRE wire command. Agent swarm
-// orchestrators use this to set a run-level TTL (e.g., 300s) so that all
-// intermediate embeddings auto-expire after the pipeline completes.
 func (s *Store) VExpireNamespace(namespace string, ttl time.Duration) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	ns, ok := s.vectors[namespace]
+	ns, ok := s.getNamespace(namespace)
 	if !ok {
 		return false
 	}
+	ns.mu.Lock()
+	defer ns.mu.Unlock()
 
 	ns.DefaultTTL = ttl
 	ns.HasDefaultTTL = true
 	ns.NamespaceTTLSetAt = time.Now()
 
-	// Apply TTL to all existing entries that don't already have a per-entry TTL
 	expiresAt := time.Now().Add(ttl)
 	for _, entry := range ns.entries {
 		if !entry.HasTTL {
@@ -314,14 +297,9 @@ func (s *Store) VExpireNamespace(namespace string, ttl time.Duration) bool {
 }
 
 // VNSDrop atomically removes an entire namespace and all its entries.
-// Returns true if the namespace existed.
-//
-// AutoGen compatibility: invoked via the VNS DROP wire command. Agent swarm
-// orchestrators call this at end-of-run to instantly reclaim all memory from a
-// completed pipeline without per-key deletion overhead.
 func (s *Store) VNSDrop(namespace string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.vecMu.Lock()
+	defer s.vecMu.Unlock()
 
 	_, ok := s.vectors[namespace]
 	if !ok {
@@ -333,24 +311,26 @@ func (s *Store) VNSDrop(namespace string) bool {
 }
 
 // VNSList returns summary information about all active vector namespaces.
-//
-// AutoGen compatibility: invoked via the VNS LIST wire command. Used by
-// monitoring dashboards and the stress test suite to introspect active agent
-// namespaces, vector counts, and approximate memory usage.
 func (s *Store) VNSList() []VNamespaceInfo {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	infos := make([]VNamespaceInfo, 0, len(s.vectors))
+	s.vecMu.RLock()
+	namespaces := make([]*VectorNamespace, 0, len(s.vectors))
+	names := make([]string, 0, len(s.vectors))
 	for name, ns := range s.vectors {
+		names = append(names, name)
+		namespaces = append(namespaces, ns)
+	}
+	s.vecMu.RUnlock()
+
+	infos := make([]VNamespaceInfo, 0, len(namespaces))
+	for i, ns := range namespaces {
+		name := names[i]
+		ns.mu.RLock()
 		count := 0
 		var approxMem int64
 		for _, entry := range ns.entries {
 			if !entry.isExpired() {
 				count++
-				// Approximate memory: vector data + overhead
-				// float32 = 4 bytes per element + string keys/values estimate
-				approxMem += int64(len(entry.Vector)*4) + 64 // 64 bytes struct overhead
+				approxMem += int64(len(entry.Vector)*4) + 64
 				for k, v := range entry.Metadata {
 					approxMem += int64(len(k) + len(v))
 				}
@@ -366,7 +346,6 @@ func (s *Store) VNSList() []VNamespaceInfo {
 		}
 
 		if ns.HasDefaultTTL {
-			// Calculate remaining TTL from when it was set + duration
 			elapsed := time.Since(ns.NamespaceTTLSetAt)
 			remaining := ns.DefaultTTL - elapsed
 			if remaining > 0 {
@@ -375,6 +354,7 @@ func (s *Store) VNSList() []VNamespaceInfo {
 				info.TTLRemaining = 0
 			}
 		}
+		ns.mu.RUnlock()
 
 		infos = append(infos, info)
 	}
@@ -383,8 +363,8 @@ func (s *Store) VNSList() []VNamespaceInfo {
 
 // VectorNamespaces returns the names of all vector namespaces (for INFO).
 func (s *Store) VectorNamespaces() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.vecMu.RLock()
+	defer s.vecMu.RUnlock()
 
 	names := make([]string, 0, len(s.vectors))
 	for name := range s.vectors {
@@ -395,27 +375,29 @@ func (s *Store) VectorNamespaces() []string {
 
 // TotalVectors returns the total number of non-expired vectors across all namespaces.
 func (s *Store) TotalVectors() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.vecMu.RLock()
+	namespaces := make([]*VectorNamespace, 0, len(s.vectors))
+	for _, ns := range s.vectors {
+		namespaces = append(namespaces, ns)
+	}
+	s.vecMu.RUnlock()
 
 	total := 0
-	for _, ns := range s.vectors {
+	for _, ns := range namespaces {
+		ns.mu.RLock()
 		for _, entry := range ns.entries {
 			if !entry.isExpired() {
 				total++
 			}
 		}
+		ns.mu.RUnlock()
 	}
 	return total
 }
 
 // SweepExpiredVectors removes all expired vector entries across all namespaces.
-// Also removes empty namespaces left after sweeping.
-// Returns the count of expired vectors removed.
-// This is the public API — acquires its own lock. For internal use under
-// an existing lock, see sweepExpiredVectorsLocked in store.go.
 func (s *Store) SweepExpiredVectors() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.vecMu.Lock()
+	defer s.vecMu.Unlock()
 	return s.sweepExpiredVectorsLocked()
 }

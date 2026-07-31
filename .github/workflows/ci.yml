@@ -15,8 +15,11 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.21'
+        go-version: '1.22'
         cache: false
+
+    - name: Go Vet
+      run: go vet ./...
 
     - name: Build
       run: go build -v ./...
@@ -24,5 +27,8 @@ jobs:
     - name: Test (Race Detector)
       run: go test -race -short -timeout 10m -v ./...
 
-    - name: Test (Full Suite)
-      run: go test -timeout 30m -v ./...
+    - name: Test (Fuzz Parser 10s)
+      run: go test -fuzz=FuzzParse -fuzztime=10s ./internal/protocol/...
+
+    - name: Test (Full Suite with Coverage)
+      run: go test -coverprofile=coverage.out -timeout 30m -v ./...

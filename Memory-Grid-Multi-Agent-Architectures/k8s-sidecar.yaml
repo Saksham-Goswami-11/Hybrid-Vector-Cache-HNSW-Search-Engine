@@ -9,7 +9,7 @@
 # Customize:
 #   - Replace the agent container image with your actual agent
 #   - Adjust memory limits based on expected vector count
-#   - Set SYNAPSE_PASSWORD for production
+#   - Set NEARBY_PASSWORD for production
 
 apiVersion: v1
 kind: Pod
@@ -32,12 +32,12 @@ spec:
         - containerPort: 6379
           name: nearby-tcp
       env:
-        - name: SYNAPSE_PORT
+        - name: NEARBY_PORT
           value: "6379"
-        - name: SYNAPSE_AOF_PATH
+        - name: NEARBY_AOF_PATH
           value: "/data/nearby.aof"
         # Uncomment for production:
-        # - name: SYNAPSE_PASSWORD
+        # - name: NEARBY_PASSWORD
         #   valueFrom:
         #     secretKeyRef:
         #       name: nearby-secret

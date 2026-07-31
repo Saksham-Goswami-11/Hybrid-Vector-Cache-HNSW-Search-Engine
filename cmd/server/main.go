@@ -27,13 +27,13 @@ func main() {
 	flag.Parse()
 
 	// Override from environment variables
-	if envPort := os.Getenv("SYNAPSE_PORT"); envPort != "" {
+	if envPort := os.Getenv("NEARBY_PORT"); envPort != "" {
 		fmt.Sscanf(envPort, "%d", port)
 	}
-	if envAOF := os.Getenv("SYNAPSE_AOF_PATH"); envAOF != "" {
+	if envAOF := os.Getenv("NEARBY_AOF_PATH"); envAOF != "" {
 		*aofPath = envAOF
 	}
-	if envPass := os.Getenv("SYNAPSE_PASSWORD"); envPass != "" {
+	if envPass := os.Getenv("NEARBY_PASSWORD"); envPass != "" {
 		*password = envPass
 	}
 

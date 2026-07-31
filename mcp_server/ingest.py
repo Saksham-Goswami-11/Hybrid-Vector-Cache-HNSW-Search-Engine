@@ -14,7 +14,7 @@ openai_client = None
 if os.environ.get("OPENAI_API_KEY"):
     openai_client = OpenAI()
 
-SYNAPSE_PORT = int(os.environ.get("SYNAPSE_PORT", 6380))
+NEARBY_PORT = int(os.environ.get("NEARBY_PORT", 6380))
 KNOWLEDGE_BASE_DIR = os.environ.get("KNOWLEDGE_BASE_DIR", "./knowledge_base")
 
 def get_file_hash(filepath: str) -> str:
@@ -64,7 +64,7 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]
     return chunks
 
 class IngestionDaemon:
-    def __init__(self, directory: str = KNOWLEDGE_BASE_DIR, port: int = SYNAPSE_PORT):
+    def __init__(self, directory: str = KNOWLEDGE_BASE_DIR, port: int = NEARBY_PORT):
         self.directory = os.path.abspath(directory)
         self.port = port
         self.client = SynapseClient(port=self.port)
